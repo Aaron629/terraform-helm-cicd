@@ -31,3 +31,4 @@ make tf-destroy
 
 > 備註：`src/app.py` 僅作為 FastAPI 範例檔，實際部署使用的是公開鏡像 `nginxdemos/hello`，
 目的在於 **免建鏡像**、**秒級驗證 Terraform × Helm 流程**。
+test cicd
