@@ -24,45 +24,45 @@ jobs:
       - name: Helm lint
         run: helm lint charts/app   
 
-deploy:
-  if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-  needs: validate
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v4
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-    # 1) 起一個臨時 KinD 叢集（會自動寫好 ~/.kube/config，並設好 $KUBECONFIG）
-    - name: Set up KinD (ephemeral k8s)
-      uses: helm/kind-action@v1
-      with:
-        version: v0.23.0
-        kubectl_version: v1.30.0
+      # 1) 起一個臨時 KinD 叢集（會自動寫好 ~/.kube/config，並設好 $KUBECONFIG）
+      - name: Set up KinD (ephemeral k8s)
+        uses: helm/kind-action@v1
+        with:
+          version: v0.23.0
+          kubectl_version: v1.30.0
 
-    # 2) Debug：確認 kubeconfig 與 context
-    - name: Check kubeconfig & context
-      run: |
-        echo "KUBECONFIG=$KUBECONFIG"
-        ls -la ~/.kube || true
-        kubectl config get-contexts
-        kubectl cluster-info
+      # 2) Debug：確認 kubeconfig 與 context
+      - name: Check kubeconfig & context
+        run: |
+          echo "KUBECONFIG=$KUBECONFIG"
+          ls -la ~/.kube || true
+          kubectl config get-contexts
+          kubectl cluster-info
 
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
 
-    - name: Terraform Init (local backend)
-      run: terraform -chdir=deploy/terraform init
+      - name: Terraform Init (local backend)
+        run: terraform -chdir=deploy/terraform init
 
-    # 3) Apply：把 KUBECONFIG 與 kind 的 context 傳給 TF
-    - name: Terraform Apply
-      run: |
-        terraform -chdir=deploy/terraform apply -auto-approve \
-          -var-file=envs/dev.tfvars \
-          -var="kubeconfig_path=$KUBECONFIG" \
-          -var="kube_context=kind-kind"
+      # 3) Apply：把 KUBECONFIG 與 kind 的 context 傳給 TF
+      - name: Terraform Apply
+        run: |
+          terraform -chdir=deploy/terraform apply -auto-approve \
+            -var-file=envs/dev.tfvars \
+            -var="kubeconfig_path=$KUBECONFIG" \
+            -var="kube_context=kind-kind"
 
-    # 4) Smoke test
-    - name: Smoke Test
-      run: |
-        kubectl -n demo rollout status deploy/hello-app --timeout=120s || true
-        kubectl -n demo get all
+      # 4) Smoke test
+      - name: Smoke Test
+        run: |
+          kubectl -n demo rollout status deploy/hello-app --timeout=120s || true
+          kubectl -n demo get all
 
