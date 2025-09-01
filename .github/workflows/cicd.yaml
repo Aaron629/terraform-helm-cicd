@@ -2,8 +2,15 @@ name: CI/CD
 
 on:
   pull_request:
+    branches: [ main ]                     # 只有要合到 main 的 PR 才跑 CI
+    paths: [ 'deploy/**', 'src/**', '.github/workflows/**' ]
   push:
-    branches: ["main"]
+    branches: [ main ]                     # 只有 main 的 push 才跑 CD
+    paths: [ 'deploy/**', 'src/**', '.github/workflows/**' ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true                 # 同一分支多次推送時，取消舊的 run
 
 jobs:
   validate:
@@ -18,14 +25,26 @@ jobs:
         run: helm lint deploy/charts/app
 
   deploy:
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: validate
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+
+      # ⬇️ 寫入 kubeconfig（必要，否則 provider 連不上叢集）
+      - name: Write kubeconfig
+        run: echo "${KUBECONFIG_DEV}" > $HOME/kubeconfig
+        env:
+          KUBECONFIG_DEV: ${{ secrets.KUBECONFIG_DEV }}
+
       - name: Terraform Init
         run: terraform -chdir=deploy/terraform init -backend-config=envs/dev/backend.hcl
+
       - name: Terraform Apply
-        run: terraform -chdir=deploy/terraform apply -auto-approve -var-file=envs/dev.tfvars
+        run: |
+          terraform -chdir=deploy/terraform apply -auto-approve \
+            -var-file=envs/dev.tfvars \
+            -var="kubeconfig_path=$HOME/kubeconfig" \
+            -var="kube_context=minikube"
