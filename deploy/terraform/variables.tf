@@ -1,29 +1,13 @@
-variable "namespace" {
-  type        = string
-  description = "Kubernetes namespace"
-  default     = "demo"
-}
+# 供 providers.tf 使用（KinD 方案：workflow 以 -var 傳入）
+variable "kubeconfig_path" { type = string }
+variable "kube_context"    { type = string }
 
-variable "app_name" {
-  type        = string
-  description = "Release / app name"
-  default     = "hello-app"
-}
+# 你的 release 與命名空間
+variable "namespace" { type = string }
+variable "app_name"  { type = string }
 
-variable "kubeconfig_path" {
-  type        = string
-  description = "Path to kubeconfig"
-  default     = "~/.kube/config"
-}
-
-variable "kube_context" {
-  type        = string
-  description = "Kube context (minikube for local demo)"
-  default     = "minikube"
-}
-
+# 用於選擇 values.<env>.yaml
 variable "env" {
-  type        = string
-  description = "Environment name to pick helm values (dev)"
-  default     = "dev"
+  type    = string
+  default = "dev"
 }
