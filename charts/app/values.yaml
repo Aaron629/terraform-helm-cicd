@@ -1,0 +1,18 @@
+replicaCount: 1
+
+image:
+  repository: nginxdemos/hello   # 穩定的公開鏡像
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+containerPort: 80
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false   # Minikube 未必開啟 ingress，預設關閉
+  className: "nginx"
+  host: hello.local
+  path: /
