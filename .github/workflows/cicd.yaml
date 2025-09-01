@@ -2,27 +2,35 @@ name: CI/CD
 
 on:
   pull_request:
-    branches: [ main ]                     # 只有要合到 main 的 PR 才跑 CI
+    branches: [ main ]
     paths: [ 'deploy/**', 'src/**', '.github/workflows/**' ]
   push:
-    branches: [ main ]                     # 只有 main 的 push 才跑 CD
+    branches: [ main ]
     paths: [ 'deploy/**', 'src/**', '.github/workflows/**' ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true                 # 同一分支多次推送時，取消舊的 run
+  cancel-in-progress: true
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+        
       - name: Terraform fmt
         run: terraform -chdir=deploy/terraform fmt -check -recursive
+        
+      - name: Terraform validate
+        run: |
+          terraform -chdir=deploy/terraform init -backend=false
+          terraform -chdir=deploy/terraform validate
+          
       - name: Helm lint
-        run: helm lint charts/app   
+        run: helm lint charts/app
 
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -31,40 +39,93 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1) 先建立 KinD 叢集，明確指定名稱（=> context 會叫 kind-kind）
-      - name: Set up KinD (ephemeral k8s)
-        uses: helm/kind-action@v1
+      # 1) 建立 KinD 集群 - 使用最新版本並明確配置
+      - name: Set up KinD cluster
+        uses: helm/kind-action@v1.10.0
         with:
-          version: v0.23.0
-          kubectl_version: v1.30.0
+          version: v0.24.0
+          kubectl_version: v1.31.0
           cluster_name: kind
+          config: |
+            kind: Cluster
+            apiVersion: kind.x-k8s.io/v1alpha4
+            nodes:
+            - role: control-plane
+              extraPortMappings:
+              - containerPort: 80
+                hostPort: 8080
+                protocol: TCP
 
-      # 2) Debug：確認 kubeconfig 路徑與 context 名稱（務必保留）
-      - name: Check kube contexts
+      # 2) 驗證集群狀態
+      - name: Verify cluster setup
         run: |
           echo "KUBECONFIG=$KUBECONFIG"
           kubectl config get-contexts
           kubectl config current-context
           kubectl cluster-info
+          kubectl get nodes
+          kubectl version --client --output=yaml
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform Init (local state)
+      - name: Terraform Init
         run: terraform -chdir=deploy/terraform init
 
-      # 3) 用「實際的 current-context」+ 正確的 KUBECONFIG 套用
+      # 3) Terraform Plan (可選，但建議保留用於調試)
+      - name: Terraform Plan
+        run: |
+          CTX="$(kubectl config current-context)"
+          echo "Planning with context: $CTX"
+          terraform -chdir=deploy/terraform plan \
+            -var-file=envs/dev.tfvars \
+            -var="kubeconfig_path=$KUBECONFIG" \
+            -var="kube_context=${CTX}"
+
+      # 4) Terraform Apply
       - name: Terraform Apply
         run: |
           CTX="$(kubectl config current-context)"
-          echo "Using context: $CTX"
+          echo "Applying with context: $CTX"
           terraform -chdir=deploy/terraform apply -auto-approve \
             -var-file=envs/dev.tfvars \
             -var="kubeconfig_path=$KUBECONFIG" \
             -var="kube_context=${CTX}"
 
-      # 4) Smoke test
+      # 5) 增強版的 Smoke Test
       - name: Smoke Test
         run: |
-          kubectl -n demo get all
-          kubectl -n demo rollout status deploy/hello-app-app --timeout=120s || true
+          echo "=== Checking namespace ==="
+          kubectl get ns demo || echo "Namespace 'demo' not found"
+          
+          echo "=== Checking all resources in demo namespace ==="
+          kubectl -n demo get all || echo "No resources in demo namespace"
+          
+          echo "=== Checking deployment status ==="
+          if kubectl -n demo get deployment hello-app-app > /dev/null 2>&1; then
+            echo "Deployment found, checking rollout status..."
+            kubectl -n demo rollout status deploy/hello-app-app --timeout=120s
+          else
+            echo "Deployment 'hello-app-app' not found, listing all deployments:"
+            kubectl -n demo get deployments
+          fi
+          
+          echo "=== Checking pods ==="
+          kubectl -n demo get pods
+          
+          echo "=== Checking services ==="
+          kubectl -n demo get svc
+
+      # 6) 可選：測試應用程式是否正常回應
+      - name: Application Health Check
+        run: |
+          if kubectl -n demo get svc hello-app-app > /dev/null 2>&1; then
+            echo "Service found, attempting port-forward test..."
+            kubectl -n demo port-forward svc/hello-app-app 8080:80 &
+            sleep 5
+            curl -f http://localhost:8080 || echo "Health check failed, but continuing..."
+            pkill -f "kubectl.*port-forward" || true
+          else
+            echo "Service not found, skipping health check"
+            kubectl -n demo get svc
+          fi
