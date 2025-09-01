@@ -39,22 +39,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1) 建立 KinD 集群 - 使用最新版本並明確配置
+      # 1) 建立 KinD 集群 - 使用穩定版本
       - name: Set up KinD cluster
-        uses: helm/kind-action@v1.10.0
+        uses: helm/kind-action@v1.8.0
         with:
-          version: v0.24.0
-          kubectl_version: v1.31.0
+          version: v0.23.0
+          kubectl_version: v1.30.0
           cluster_name: kind
-          config: |
-            kind: Cluster
-            apiVersion: kind.x-k8s.io/v1alpha4
-            nodes:
-            - role: control-plane
-              extraPortMappings:
-              - containerPort: 80
-                hostPort: 8080
-                protocol: TCP
 
       # 2) 驗證集群狀態
       - name: Verify cluster setup
