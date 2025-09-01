@@ -1,0 +1,31 @@
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+      - name: Terraform fmt
+        run: terraform -chdir=deploy/terraform fmt -check -recursive
+      - name: Helm lint
+        run: helm lint deploy/charts/app
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+      - name: Terraform Init
+        run: terraform -chdir=deploy/terraform init -backend-config=envs/dev/backend.hcl
+      - name: Terraform Apply
+        run: terraform -chdir=deploy/terraform apply -auto-approve -var-file=envs/dev.tfvars
