@@ -22,7 +22,7 @@ jobs:
       - name: Terraform fmt
         run: terraform -chdir=deploy/terraform fmt -check -recursive
       - name: Helm lint
-        run: helm lint deploy/charts/app
+        run: helm lint charts/app   
 
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
