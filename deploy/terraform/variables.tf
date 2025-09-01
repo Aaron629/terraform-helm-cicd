@@ -1,6 +1,13 @@
 # 供 providers.tf 使用（KinD 方案：workflow 以 -var 傳入）
-variable "kubeconfig_path" { type = string }
-variable "kube_context" { type = string }
+variable "kubeconfig_path" {
+  type    = string
+  default = "~/.kube/config"
+}
+
+variable "kube_context" {
+  type    = string
+  default = "kind-kind"
+}
 
 # 你的 release 與命名空間
 variable "namespace" { type = string }

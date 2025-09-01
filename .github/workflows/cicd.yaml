@@ -46,5 +46,5 @@ jobs:
         run: |
           terraform -chdir=deploy/terraform apply -auto-approve \
             -var-file=envs/dev.tfvars \
-            -var="kubeconfig_path=$HOME/kubeconfig" \
-            -var="kube_context=minikube"
+            -var="kubeconfig_path=$HOME/.kube/config" \
+            -var="kube_context=kind-kind"
