@@ -24,27 +24,45 @@ jobs:
       - name: Helm lint
         run: helm lint charts/app   
 
-  deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: validate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+deploy:
+  if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  needs: validate
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
 
-      # ⬇️ 寫入 kubeconfig（必要，否則 provider 連不上叢集）
-      - name: Write kubeconfig
-        run: echo "${KUBECONFIG_DEV}" > $HOME/kubeconfig
-        env:
-          KUBECONFIG_DEV: ${{ secrets.KUBECONFIG_DEV }}
+    # 1) 起一個臨時 KinD 叢集（會自動寫好 ~/.kube/config，並設好 $KUBECONFIG）
+    - name: Set up KinD (ephemeral k8s)
+      uses: helm/kind-action@v1
+      with:
+        version: v0.23.0
+        kubectl_version: v1.30.0
 
-      - name: Terraform Init
-        run: terraform -chdir=deploy/terraform init -backend-config=envs/dev/backend.hcl
+    # 2) Debug：確認 kubeconfig 與 context
+    - name: Check kubeconfig & context
+      run: |
+        echo "KUBECONFIG=$KUBECONFIG"
+        ls -la ~/.kube || true
+        kubectl config get-contexts
+        kubectl cluster-info
 
-      - name: Terraform Apply
-        run: |
-          terraform -chdir=deploy/terraform apply -auto-approve \
-            -var-file=envs/dev.tfvars \
-            -var="kubeconfig_path=$HOME/.kube/config" \
-            -var="kube_context=kind-kind"
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+
+    - name: Terraform Init (local backend)
+      run: terraform -chdir=deploy/terraform init
+
+    # 3) Apply：把 KUBECONFIG 與 kind 的 context 傳給 TF
+    - name: Terraform Apply
+      run: |
+        terraform -chdir=deploy/terraform apply -auto-approve \
+          -var-file=envs/dev.tfvars \
+          -var="kubeconfig_path=$KUBECONFIG" \
+          -var="kube_context=kind-kind"
+
+    # 4) Smoke test
+    - name: Smoke Test
+      run: |
+        kubectl -n demo rollout status deploy/hello-app --timeout=120s || true
+        kubectl -n demo get all
+
