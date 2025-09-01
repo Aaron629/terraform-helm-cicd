@@ -68,5 +68,3 @@ jobs:
         run: |
           kubectl -n demo get all
           kubectl -n demo rollout status deploy/hello-app-app --timeout=120s || true
-
-
