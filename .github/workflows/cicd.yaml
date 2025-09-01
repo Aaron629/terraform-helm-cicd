@@ -37,6 +37,7 @@ jobs:
         with:
           version: v0.23.0
           kubectl_version: v1.30.0
+          cluster_name: kind   # 🔑 這樣 context 會是 kind-kind
 
       # 2) Debug：確認 kubeconfig 與 context
       - name: Check kubeconfig & context
