@@ -47,15 +47,31 @@ jobs:
           kubectl_version: v1.30.0
           cluster_name: kind
 
-      # 2) 驗證集群狀態
-      - name: Verify cluster setup
+      # 2) 驗證集群狀態和修正 kubeconfig 路徑
+      - name: Verify cluster and fix kubeconfig path
         run: |
+          echo "=== Environment Variables ==="
           echo "KUBECONFIG=$KUBECONFIG"
+          echo "HOME=$HOME"
+          
+          echo "=== Fix kubeconfig path (expand tilde) ==="
+          # 將 KUBECONFIG 路徑展開為絕對路徑
+          EXPANDED_KUBECONFIG=$(eval echo $KUBECONFIG)
+          echo "Original KUBECONFIG: $KUBECONFIG"
+          echo "Expanded KUBECONFIG: $EXPANDED_KUBECONFIG"
+          echo "KUBECONFIG=$EXPANDED_KUBECONFIG" >> $GITHUB_ENV
+          
+          echo "=== Kubeconfig file info ==="
+          ls -la $EXPANDED_KUBECONFIG
+          echo "File exists: $(test -f $EXPANDED_KUBECONFIG && echo 'YES' || echo 'NO')"
+          echo "File readable: $(test -r $EXPANDED_KUBECONFIG && echo 'YES' || echo 'NO')"
+          
+          echo "=== Kubectl contexts ==="
           kubectl config get-contexts
           kubectl config current-context
-          kubectl cluster-info
-          kubectl get nodes
-          kubectl version --client --output=yaml
+          
+          echo "=== Test connection to specific context ==="
+          kubectl --context kind-kind cluster-info
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -63,24 +79,40 @@ jobs:
       - name: Terraform Init
         run: terraform -chdir=deploy/terraform init
 
-      # 3) Terraform Plan (可選，但建議保留用於調試)
-      - name: Terraform Plan
+      # 3) Terraform Plan 使用絕對路徑
+      - name: Terraform Plan with Debug
         run: |
           CTX="$(kubectl config current-context)"
+          # 將 KUBECONFIG 轉換為絕對路徑，避免波浪號問題
+          KUBECONFIG_ABS=$(realpath $KUBECONFIG)
+          echo "=== Terraform Debug Info ==="
           echo "Planning with context: $CTX"
+          echo "Original KUBECONFIG: $KUBECONFIG"
+          echo "Absolute KUBECONFIG: $KUBECONFIG_ABS"
+          echo "Kubeconfig file exists: $(test -f $KUBECONFIG_ABS && echo 'YES' || echo 'NO')"
+          
+          echo "=== Testing kubectl with absolute path ==="
+          kubectl --kubeconfig="$KUBECONFIG_ABS" --context="$CTX" get nodes
+          
+          echo "=== Running Terraform Plan ==="
           terraform -chdir=deploy/terraform plan \
             -var-file=envs/dev.tfvars \
-            -var="kubeconfig_path=$KUBECONFIG" \
-            -var="kube_context=${CTX}"
+            -var="kubeconfig_path=$KUBECONFIG_ABS" \
+            -var="kube_context=${CTX}" \
+            -detailed-exitcode || true
 
-      # 4) Terraform Apply
+      # 4) Terraform Apply 使用絕對路徑
       - name: Terraform Apply
         run: |
           CTX="$(kubectl config current-context)"
+          # 確保使用絕對路徑，不使用波浪號
+          KUBECONFIG_ABS=$(realpath $KUBECONFIG)
           echo "Applying with context: $CTX"
+          echo "Using absolute kubeconfig path: $KUBECONFIG_ABS"
+          
           terraform -chdir=deploy/terraform apply -auto-approve \
             -var-file=envs/dev.tfvars \
-            -var="kubeconfig_path=$KUBECONFIG" \
+            -var="kubeconfig_path=$KUBECONFIG_ABS" \
             -var="kube_context=${CTX}"
 
       # 5) 增強版的 Smoke Test
