@@ -9,7 +9,7 @@ resource "helm_release" "app" {
   namespace = kubernetes_namespace.ns.metadata[0].name
   chart     = "${path.module}/../../charts/app"
 
-  # 覆寫 values，可依 env 切換（例如 values.dev.yaml）
+  # 覆寫values，可依 env 切換（例如 values.dev.yaml）
   values = [
     file("${path.module}/../../charts/app/values.yaml"),
     file("${path.module}/../../charts/app/values.${var.env}.yaml")
